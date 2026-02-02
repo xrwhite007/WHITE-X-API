@@ -6,54 +6,56 @@ const app = express();
 app.use(cors());
 
 let savedHistory = [];
-// ৩০ সেকেন্ড গেমের অফিশিয়াল এপিআই লিঙ্ক
-const HISTORY_API = 'https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json';
+// ১ মিনিটের এপিআই লিঙ্ক
+const HISTORY_API = 'https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json';
 
-// ডাটা ফেচ এবং আপডেট করার ফাংশন
 async function updateHistory() {
     try {
-        const res = await axios.get(`${HISTORY_API}?ts=${Date.now()}`);
-        const newList = res.data.data.list;
-
-        newList.forEach(item => {
-            // নতুন পিরিয়ড আসলে সেটা লিস্টে সেভ করবে
-            if (!savedHistory.find(s => s.issueNumber === item.issueNumber)) {
-                savedHistory.push(item);
-            }
-        });
-
-        // লেটেস্ট ৫০টি রেজাল্ট রাখবে যাতে হিস্ট্রি চেক করা যায়
-        savedHistory.sort((a, b) => BigInt(b.issueNumber) > BigInt(a.issueNumber) ? 1 : -1);
-        if (savedHistory.length > 50) savedHistory = savedHistory.slice(0, 50);
-
-        console.log("Latest Period Updated:", savedHistory[0].issueNumber);
+        // ১৫নিটি রেজাল্ট পাওয়ার জন্য পেজ সাইজ বাড়ানো হয়েছে
+        const res = await axios.get(`${HISTORY_API}?pageSize=150&ts=${Date.now()}`);
+        if (res.data && res.data.data && res.data.data.list) {
+            savedHistory = res.data.data.list;
+            console.log("150 Records Updated. Last Period: ", savedHistory[0].issueNumber);
+        }
     } catch (e) {
-        console.error("Fetch Error:", e.message);
+        console.error("API Fetch Error");
     }
 }
 
-// প্রতি ৫ সেকেন্ডে নতুন ডাটা চেক করবে
-setInterval(updateHistory, 5000);
-
-// রুট পাথ ঠিক করা যাতে "Cannot GET /" না আসে
-app.get('/', (req, res) => {
-    res.send("Server is Live! Prediction endpoint: /prediction");
-});
+// প্রতি ১০ সেকেন্ডে ডাটা রিফ্রেশ
+setInterval(updateHistory, 10000);
+updateHistory();
 
 app.get('/prediction', (req, res) => {
-    if (savedHistory.length < 2) {
-        return res.json({ status: "waiting" });
+    if (savedHistory.length < 10) {
+        return res.json({ status: "waiting", message: "Not enough data" });
     }
 
-    const lastP = savedHistory[0].issueNumber;
-    const lastNum = savedHistory[0].number;
-    
-    // পিরিয়ডের সাথে ১ যোগ করে নেক্সট পিরিয়ড তৈরি
-    const nextPeriod = (BigInt(lastP) + 1n).toString();
+    const lastData = savedHistory[0];
+    const lastNum = lastData.number;
+    const nextPeriod = (BigInt(lastData.issueNumber) + 1n).toString();
 
-    let finalPred = "WAITING...";
+    let prediction = "WAITING...";
 
-    // তোমার দেওয়া প্যাটার্ন ম্যাচিং লজিক
+    // ১৫০টি রেজাল্টের মধ্যে প্যাটার্ন খোঁজা
+    for (let i = 1; i < savedHistory.length - 1; i++) {
+        if (savedHistory[i].number === lastNum) {
+            // প্যাটার্ন মিললে আগের বার যা এসেছিল তাই দিবে
+            prediction = parseInt(savedHistory[i - 1].number) >= 5 ? "BIG" : "SMALL";
+            break; 
+        }
+    }
+
+    // Default Logic ডিলিট করা হয়েছে। প্যাটার্ন না মিললে WAITING দেখাবে।
+    res.json({
+        period: nextPeriod,
+        prediction: prediction
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running with 150-data logic`));
+য়া প্যাটার্ন ম্যাচিং লজিক
     for (let i = 1; i < savedHistory.length - 1; i++) {
         if (savedHistory[i].number === lastNum) {
             const nextResultNum = parseInt(savedHistory[i - 1].number);
