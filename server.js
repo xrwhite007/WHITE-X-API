@@ -5,62 +5,63 @@ const app = express();
 
 app.use(cors());
 
-const HISTORY_API = 'https://draw.ar-lottery02.com/WinGo/WinGo_1M/GetHistoryIssuePage.json';
-let gameHistory = [];
+let savedHistory = [];
+const HISTORY_API = 'https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json';
 
-const chartData = {
-    "SMALL": { "0": "0-3", "1": "4-0", "2": "2-4", "3": "2-1", "4": "4-2", "5": "3-0", "6": "1-2", "7": "4-0", "8": "2-0", "9": "0-2" },
-    "BIG": { "0": "6-5", "1": "5-6", "2": "9-8", "3": "8-5", "4": "7-8", "5": "5-9", "6": "8-7", "7": "8-9", "8": "8-7", "9": "9-5" }
-};
-
-async function updateData() {
+// ডাটা ফেচ করার ফাংশন
+async function updateHistory() {
     try {
         const res = await axios.get(`${HISTORY_API}?ts=${Date.now()}`);
         const newList = res.data.data.list;
 
         newList.forEach(item => {
-            if (!gameHistory.find(s => s.issueNumber === item.issueNumber)) {
-                gameHistory.unshift(item); 
+            if (!savedHistory.find(s => s.issueNumber === item.issueNumber)) {
+                savedHistory.push(item);
             }
         });
 
-        if (gameHistory.length > 150) gameHistory = gameHistory.slice(0, 150);
-        console.log(`Updated! Total Records: ${gameHistory.length}`);
+        // শুধু লাস্ট ৫০টি ডাটা মেমরিতে রাখবে (সার্ভার ফাস্ট রাখার জন্য)
+        savedHistory.sort((a, b) => BigInt(b.issueNumber) > BigInt(a.issueNumber) ? 1 : -1);
+        if (savedHistory.length > 50) savedHistory = savedHistory.slice(0, 50);
+
+        console.log("History Updated. Current Period:", savedHistory[0].issueNumber);
     } catch (e) {
-        console.error("API Fetch Error");
+        console.error("Fetch Error:", e.message);
     }
 }
 
-setInterval(updateData, 60000); 
-updateData();
+// প্রতি ৫ সেকেন্ডে ডাটা চেক করবে
+setInterval(updateHistory, 5000);
 
 app.get('/prediction', (req, res) => {
-    if (gameHistory.length < 2) {
-        return res.json({ status: "waiting", message: "Data collecting..." });
+    if (savedHistory.length < 2) {
+        return res.json({ status: "waiting" });
     }
 
-    const lastResult = gameHistory[0];
-    const lastNum = lastResult.number.toString();
-    
-    let sizePred = "BIG"; 
-    for (let i = 1; i < gameHistory.length - 1; i++) {
-        if (gameHistory[i].number.toString() === lastNum) {
-            sizePred = parseInt(gameHistory[i - 1].number) >= 5 ? "BIG" : "SMALL";
+    const lastP = savedHistory[0].issueNumber;
+    const lastNum = savedHistory[0].number;
+    const nextPeriod = (BigInt(lastP) + 1n).toString();
+
+    let finalPred = "WAITING...";
+
+    // তোমার দেওয়া HTML এর হুবহু লজিক
+    for (let i = 1; i < savedHistory.length - 1; i++) {
+        if (savedHistory[i].number === lastNum) {
+            const nextResultNum = parseInt(savedHistory[i - 1].number);
+            finalPred = nextResultNum >= 5 ? "BIG" : "SMALL";
             break;
         }
     }
 
-    const numPred = chartData[sizePred][lastNum] || "N/A";
+    if (finalPred === "WAITING...") {
+        finalPred = parseInt(lastNum) >= 5 ? "SMALL" : "BIG";
+    }
 
     res.json({
-        period: (BigInt(lastResult.issueNumber) + 1n).toString(),
-        last_number: lastNum,
-        prediction: {
-            size: sizePred,
-            numbers: numPred
-        }
+        period: nextPeriod,
+        prediction: finalPred
     });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
