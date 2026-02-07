@@ -6,44 +6,45 @@ const PORT = process.env.PORT || 3000;
 
 const SOURCE_API = 'https://draw.ar-lottery02.com/WinGo/WinGo_1M/GetHistoryIssuePage.json';
 
-// Leader tracking stats
-let stats = { m1: 0, m2: 0, m3: 0 };
-let predictions = {}; 
-let lastCheckedPeriod = "";
+// Win tracking system
+let winStats = { m1: 0, m2: 0, m3: 0 };
+let predictionHistory = {}; 
+let lastProcessedPeriod = "";
 
-async function getLeaderSignal() {
+async function updateLeaderAndPredict() {
     try {
-        const res = await axios.get(SOURCE_API + '?t=' + Date.now());
-        const list = res.data.data.list;
+        const response = await axios.get(SOURCE_API + '?t=' + Date.now());
+        const list = response.data.data.list;
         const lastItem = list[0];
         const lastN = parseInt(lastItem.number);
         const lastS = lastN >= 5 ? "BIG" : "SMALL";
         const currentPeriod = lastItem.issueNumber;
         const nextPeriod = (BigInt(currentPeriod) + 1n).toString();
 
-        // ১. Check Win/Loss for previous period
-        if (currentPeriod !== lastCheckedPeriod && predictions[currentPeriod]) {
-            if (predictions[currentPeriod].m1 === lastS) stats.m1++;
-            if (predictions[currentPeriod].m2 === lastS) stats.m2++;
-            if (predictions[currentPeriod].m3 === lastS) stats.m3++;
-            lastCheckedPeriod = currentPeriod;
+        // ১. Check logic: Konta win hoyeche tracking kora
+        if (currentPeriod !== lastProcessedPeriod && predictionHistory[currentPeriod]) {
+            if (predictionHistory[currentPeriod].m1 === lastS) winStats.m1++;
+            if (predictionHistory[currentPeriod].m2 === lastS) winStats.m2++;
+            if (predictionHistory[currentPeriod].m3 === lastS) winStats.m3++;
+            lastProcessedPeriod = currentPeriod;
         }
 
-        // ২. Generate 3 Math.random() predictions for next period
-        if (!predictions[nextPeriod]) {
-            predictions[nextPeriod] = {
+        // ২. Next Period-er jonno ৩-ti alada random prediction generate kora
+        if (!predictionHistory[nextPeriod]) {
+            predictionHistory[nextPeriod] = {
                 m1: Math.random() > 0.5 ? "BIG" : "SMALL",
                 m2: Math.random() > 0.5 ? "BIG" : "SMALL",
                 m3: Math.random() > 0.5 ? "BIG" : "SMALL"
             };
         }
 
-        // ৩. Find the Leader (Highest win count)
-        let leader = Object.keys(stats).reduce((a, b) => stats[a] >= stats[b] ? a : b);
+        // ৩. Leader select kora (Jar win count sobcheye beshi)
+        let leader = Object.keys(winStats).reduce((a, b) => winStats[a] >= winStats[b] ? a : b);
         
         return {
             period: nextPeriod,
-            prediction: predictions[nextPeriod][leader]
+            prediction: predictionHistory[nextPeriod][leader],
+            leader_info: leader // Internal check-er jonno
         };
     } catch (e) {
         return null;
@@ -51,11 +52,14 @@ async function getLeaderSignal() {
 }
 
 app.get('/api', async (req, res) => {
-    const data = await getLeaderSignal();
+    const data = await updateLeaderAndPredict();
     if (data) {
-        res.json(data);
+        res.json({
+            period: data.period,
+            prediction: data.prediction
+        });
     } else {
-        res.status(500).json({ error: "Fetch failed" });
+        res.status(500).json({ error: "Fetch error" });
     }
 });
 
@@ -63,4 +67,4 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, () => console.log('White X API is Live'));
+app.listen(PORT, () => console.log('Leader System Live'));
