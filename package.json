@@ -1,7 +1,7 @@
 {
-  "name": "sureshot-panel-1m",
+  "name": "sureshot-panel",
   "version": "1.0.0",
-  "description": "1 Minute Prediction Panel",
+  "description": "Realtime Predictor Server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -12,7 +12,4 @@
   "engines": {
     "node": ">=14.0.0"
   }
-}
-,
-  "license": "ISC"
 }
